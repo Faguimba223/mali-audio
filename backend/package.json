@@ -1,12 +1,14 @@
 {
   "name": "mali-audio-backend",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "db:init": "node -e \"import('./config/db.js').then(({ initializeDatabase }) => initializeDatabase())\"",
+    "db:init": "node db/migrate.js up",
+    "db:migrate": "node db/migrate.js up",
+    "db:status": "node db/migrate.js status",
     "test": "node --test"
   },
   "dependencies": {

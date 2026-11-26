@@ -1,45 +1,73 @@
 import jwt from 'jsonwebtoken';
-import { query } from '../config/db.js';
+import env from '../config/env.js';
+import defaultDb from '../config/db.js';
 
-const jwtSecret = process.env.JWT_SECRET || 'mali-audio-dev-secret';
+export function createAuthMiddleware(db = defaultDb, secret = env.jwtSecret) {
+  const resolveTokenUser = async (authHeader) => {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+    const token = authHeader.slice(7).trim();
+    if (!token) return null;
 
-export const requireAuth = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Token manquant ou invalide.' });
-  }
-
-  const token = authHeader.split(' ')[1];
-
-  try {
-    const decoded = jwt.verify(token, jwtSecret);
-    const { rows } = await query('SELECT id, name, email, role, is_active FROM users WHERE id = $1', [decoded.id]);
+    const decoded = jwt.verify(token, secret);
+    const { rows } = await db.query(
+      'SELECT id, name, username, email, role, is_active, token_version FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [decoded.id]
+    );
     const user = rows[0];
-
-    if (!user || !user.is_active) {
-      return res.status(401).json({ message: 'Session expirée ou compte désactivé.' });
+    if (!user || !user.is_active) return null;
+    if (decoded.tv !== undefined && Number(decoded.tv) !== Number(user.token_version || 0)) {
+      return null;
     }
 
-    req.user = {
+    return {
       id: user.id,
       name: user.name,
+      username: user.username,
       email: user.email,
       role: user.role,
+      token_version: Number(user.token_version || 0),
     };
+  };
 
+  const requireAuth = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'Authentification requise.' });
+    }
+    try {
+      const user = await resolveTokenUser(authHeader);
+      if (!user) {
+        return res.status(401).json({ message: 'Session expirée ou compte désactivé.' });
+      }
+      req.user = user;
+      return next();
+    } catch {
+      return res.status(401).json({ message: 'Session expirée ou token invalide.' });
+    }
+  };
+
+  const optionalAuth = async (req, _res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return next();
+    try {
+      const user = await resolveTokenUser(authHeader);
+      if (user) req.user = user;
+    } catch {
+      // Ignore invalid optional auth header for public routes
+    }
     return next();
-  } catch (error) {
-    return res.status(401).json({ message: 'Session expirée ou token invalide.' });
-  }
-};
+  };
 
-export const requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Accès réservé aux administrateurs.' });
-  }
+  const requireAdmin = (req, res, next) => {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Accès réservé aux administrateurs.' });
+    }
+    return next();
+  };
 
-  return next();
-};
+  return { requireAuth, optionalAuth, requireAdmin };
+}
 
+const defaultAuth = createAuthMiddleware();
+export const { requireAuth, optionalAuth, requireAdmin } = defaultAuth;
 export default requireAuth;

@@ -1,0 +1,54 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Mali Audio API",
+    "version": "1.2.0",
+    "description": "API centrale REST/JSON de Mali Audio (PWA publique, Administration et Application mobile) avec stockage audio privé et streaming sécurisé HTTP Range."
+  },
+  "servers": [
+    { "url": "/api", "description": "Serveur API courant" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "paths": {
+    "/health": { "get": { "summary": "État de l'API et de PostgreSQL", "responses": { "200": { "description": "API opérationnelle" } } } },
+    "/auth/register": { "post": { "summary": "Inscription utilisateur", "responses": { "201": { "description": "Compte créé + JWT" }, "409": { "description": "Email déjà utilisé" } } } },
+    "/auth/login": { "post": { "summary": "Connexion par email, username ou nom", "responses": { "200": { "description": "JWT + profil" }, "401": { "description": "Identifiants invalides" } } } },
+    "/auth/me": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Profil utilisateur connecté", "responses": { "200": { "description": "Profil" } } } },
+    "/auth/logout": { "post": { "security": [{ "bearerAuth": [] }], "summary": "Déconnexion et révocation du JWT (token_version)", "responses": { "200": { "description": "Session fermée" } } } },
+    "/auth/password-reset/request": { "post": { "summary": "Demande de lien de réinitialisation", "responses": { "200": { "description": "Réponse neutre" } } } },
+    "/auth/password-reset/confirm": { "post": { "summary": "Validation du jeton usage unique et changement du mot de passe", "responses": { "200": { "description": "Mot de passe modifié" } } } },
+    "/users/profile": { "patch": { "security": [{ "bearerAuth": [] }], "summary": "Mise à jour du profil et avatar", "responses": { "200": { "description": "Profil mis à jour" } } }, "delete": { "security": [{ "bearerAuth": [] }], "summary": "Désactivation du compte personnel", "responses": { "200": { "description": "Compte désactivé" } } } },
+    "/users/password": { "patch": { "security": [{ "bearerAuth": [] }], "summary": "Modification du mot de passe", "responses": { "200": { "description": "Nouveau JWT" } } } },
+    "/artists": { "get": { "summary": "Liste des artistes publiés", "responses": { "200": { "description": "Liste ou page d'artistes" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Créer un artiste (Admin)", "responses": { "201": { "description": "Artiste créé" } } } },
+    "/artists/{id}": { "get": { "summary": "Fiche artiste + chansons, albums et vidéos", "responses": { "200": { "description": "Détails artiste" } } }, "put": { "security": [{ "bearerAuth": [] }], "summary": "Modifier un artiste (Admin)", "responses": { "200": { "description": "Modifié" } } }, "delete": { "security": [{ "bearerAuth": [] }], "summary": "Archiver ou supprimer un artiste (Admin)", "responses": { "200": { "description": "Archivé ou supprimé" } } } },
+    "/albums": { "get": { "summary": "Liste des albums et singles publiés", "responses": { "200": { "description": "Albums/Singles" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Créer un album ou single (Admin)", "responses": { "201": { "description": "Créé" } } } },
+    "/albums/{id}": { "get": { "summary": "Fiche album/single avec pistes ordonnées", "responses": { "200": { "description": "Détails album" } } }, "put": { "security": [{ "bearerAuth": [] }], "summary": "Modifier un album (Admin)", "responses": { "200": { "description": "Modifié" } } }, "delete": { "security": [{ "bearerAuth": [] }], "summary": "Supprimer un album (Admin)", "responses": { "200": { "description": "Supprimé" } } } },
+    "/songs": { "get": { "summary": "Catalogue chansons publiées (filtres genre, langue, artiste, tri)", "responses": { "200": { "description": "Liste chansons" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Créer chanson + upload audio privé (Admin)", "responses": { "201": { "description": "Créée" } } } },
+    "/songs/{id}": { "get": { "summary": "Fiche chanson", "responses": { "200": { "description": "Détails chanson" } } }, "put": { "security": [{ "bearerAuth": [] }], "summary": "Modifier chanson (Admin)", "responses": { "200": { "description": "Modifiée" } } }, "delete": { "security": [{ "bearerAuth": [] }], "summary": "Supprimer chanson (Admin)", "responses": { "200": { "description": "Supprimée" } } } },
+    "/songs/{id}/stream-token": { "post": { "summary": "Générer un jeton de streaming temporaire (TTL court)", "responses": { "200": { "description": "URL temporaire /api/stream/{token}" }, "403": { "description": "Contenu non publié" } } } },
+    "/songs/{id}/play": { "post": { "summary": "Incrémenter le compteur d'écoutes", "responses": { "200": { "description": "Compteur incrémenté" } } } },
+    "/stream/{token}": { "get": { "summary": "Diffusion audio protégée avec support HTTP Range (206) et Cache-Control: no-store", "responses": { "200": { "description": "Flux complet" }, "206": { "description": "Plage d'octets" }, "401": { "description": "Jeton expiré" }, "403": { "description": "Accès refusé" } } } },
+    "/playlists/public": { "get": { "summary": "Playlists publiques et éditoriales", "responses": { "200": { "description": "Liste" } } } },
+    "/playlists/public/{id}": { "get": { "summary": "Détail d'une playlist publique", "responses": { "200": { "description": "Détails + titres" } } } },
+    "/playlists": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Playlists personnelles de l'utilisateur", "responses": { "200": { "description": "Liste" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Créer une playlist personnelle", "responses": { "201": { "description": "Créée" } } } },
+    "/playlists/{id}/tracks": { "post": { "security": [{ "bearerAuth": [] }], "summary": "Ajouter un morceau (propriétaire uniquement)", "responses": { "201": { "description": "Ajouté" } } } },
+    "/playlists/admin": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Lister toutes les playlists (Admin)", "responses": { "200": { "description": "Liste" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Créer playlist éditoriale (Admin)", "responses": { "201": { "description": "Créée" } } } },
+    "/videos": { "get": { "summary": "Vidéos publiées", "responses": { "200": { "description": "Liste" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Créer vidéo (Admin)", "responses": { "201": { "description": "Créée" } } } },
+    "/news": { "get": { "summary": "Actualités publiées", "responses": { "200": { "description": "Liste" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Créer actualité (Admin)", "responses": { "201": { "description": "Créée" } } } },
+    "/favorites": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Favoris de l'utilisateur", "responses": { "200": { "description": "Liste" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Ajouter un favori", "responses": { "201": { "description": "Ajouté" } } } },
+    "/history": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Historique d'écoute", "responses": { "200": { "description": "Liste" } } }, "post": { "security": [{ "bearerAuth": [] }], "summary": "Enregistrer une écoute", "responses": { "201": { "description": "Enregistré" } } }, "delete": { "security": [{ "bearerAuth": [] }], "summary": "Effacer son historique", "responses": { "200": { "description": "Effacé" } } } },
+    "/search": { "get": { "summary": "Recherche globale multi-entités", "responses": { "200": { "description": "Résultats groupés" } } } },
+    "/admin/dashboard": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Indicateurs, brouillons et alertes (Admin)", "responses": { "200": { "description": "Statistiques" } } } },
+    "/admin/settings": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Paramètres système (Admin)", "responses": { "200": { "description": "Paramètres" } } }, "put": { "security": [{ "bearerAuth": [] }], "summary": "Mettre à jour les paramètres (Admin)", "responses": { "200": { "description": "Mis à jour" } } } },
+    "/admin/media": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Inventaire des ressources médias", "responses": { "200": { "description": "Médias" } } } },
+    "/admin/audit-logs": { "get": { "security": [{ "bearerAuth": [] }], "summary": "Journal des actions sensibles (Admin)", "responses": { "200": { "description": "Journaux" } } } }
+  }
+}

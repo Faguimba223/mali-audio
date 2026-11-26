@@ -1,171 +1,392 @@
-import mongoose from 'mongoose';
-import Music from '../models/Music.js';
-import Playlist from '../models/Playlist.js';
-import { resolveUploadUrl } from '../config/upload.js';
+import { resolvePublicImageUrl } from '../config/upload.js';
+import { logAuditEvent } from '../utils/audit.js';
+import { mapPlaylist, mapSong } from '../utils/mappers.js';
+import { normalizeStatus, parseBoolean, parseId, parseJsonField, slugify, VALID_STATUSES } from '../utils/validation.js';
 
-const populatedPlaylist = (query) => query.populate({
-  path: 'tracks.musicId',
-  populate: [
-    { path: 'artistId', select: 'name image' },
-    { path: 'albumId', select: 'title coverArt' },
-  ],
-});
+export function createPlaylistController(db) {
+  const fetchPlaylistTracks = async (playlistId, includeUnpublished = false) => {
+    const statusFilter = includeUnpublished ? '' : ` AND s.status = 'published'`;
+    const { rows } = await db.query(
+      `SELECT ps.position, ps.added_at, s.*, a.name AS artist_name, al.title AS album_title
+       FROM playlist_songs ps
+       JOIN songs s ON s.id = ps.song_id
+       LEFT JOIN artists a ON a.id = s.artist_id
+       LEFT JOIN albums al ON al.id = s.album_id
+       WHERE ps.playlist_id = $1${statusFilter}
+       ORDER BY ps.position ASC, ps.added_at ASC`,
+      [playlistId]
+    );
+    return rows.map((row) => ({ ...mapSong(row), position: row.position }));
+  };
 
-const ownedPlaylist = (id, userId) => Playlist.findOne({ _id: id, userId });
+  return {
+    async listPublic(req, res) {
+      const editorialOnly = req.query.editorial === 'true';
+      const conditions = [`p.is_public = true`, `p.status = 'published'`];
+      if (editorialOnly) conditions.push(`p.is_editorial = true`);
 
-export const getPlaylists = async (req, res) => {
-  const items = await Playlist.find({ userId: req.user.id }).sort({ updatedAt: -1 }).lean();
-  return res.json(items);
-};
+      const { rows } = await db.query(
+        `SELECT p.*, u.name AS owner_name,
+                (SELECT COUNT(*)::int FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id WHERE ps.playlist_id = p.id AND s.status = 'published') AS track_count
+         FROM playlists p
+         LEFT JOIN users u ON u.id = p.user_id
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY p.is_editorial DESC, p.updated_at DESC`
+      );
+      return res.json(rows.map(mapPlaylist));
+    },
 
-export const getPlaylist = async (req, res) => {
-  try {
-    const playlist = await populatedPlaylist(Playlist.findOne({
-      _id: req.params.id,
-      $or: [{ userId: req.user.id }, { isPublic: true }],
-    })).lean();
-    if (!playlist) return res.status(404).json({ message: 'Playlist non trouvée.' });
-    return res.json(playlist);
-  } catch (error) {
-    return res.status(400).json({ message: 'Identifiant de playlist invalide.' });
-  }
-};
+    async getPublicOne(req, res) {
+      const id = parseId(req.params.id);
+      const whereField = id ? 'p.id = $1' : 'p.slug = $1';
+      const param = id || req.params.id;
 
-export const createPlaylist = async (req, res) => {
-  if (typeof req.body.name !== 'string' || !req.body.name.trim()) {
-    return res.status(400).json({ message: 'Le nom de la playlist est obligatoire.' });
-  }
-  const playlist = await Playlist.create({
-    userId: req.user.id,
-    name: req.body.name.trim(),
-    description: req.body.description || '',
-    isPublic: req.body.isPublic === true || req.body.isPublic === 'true',
-  });
-  return res.status(201).json(playlist);
-};
+      const { rows } = await db.query(
+        `SELECT p.*, u.name AS owner_name
+         FROM playlists p LEFT JOIN users u ON u.id = p.user_id
+         WHERE ${whereField} AND p.is_public = true AND p.status = 'published'`,
+        [param]
+      );
+      if (!rows[0]) return res.status(404).json({ message: 'Playlist publique introuvable.' });
 
-export const updatePlaylist = async (req, res) => {
-  const playlist = await ownedPlaylist(req.params.id, req.user.id);
-  if (!playlist) return res.status(404).json({ message: 'Playlist non trouvée.' });
-  if (typeof req.body.name === 'string' && req.body.name.trim()) playlist.name = req.body.name.trim();
-  if (req.body.description !== undefined) playlist.description = req.body.description;
-  if (req.body.isPublic !== undefined) playlist.isPublic = req.body.isPublic === true || req.body.isPublic === 'true';
-  await playlist.save();
-  return res.json(playlist);
-};
+      const tracks = await fetchPlaylistTracks(rows[0].id, false);
+      return res.json({
+        ...mapPlaylist({ ...rows[0], track_count: tracks.length }),
+        tracks,
+        trackIds: tracks.map((t) => String(t.id)),
+      });
+    },
 
-export const deletePlaylist = async (req, res) => {
-  const playlist = await ownedPlaylist(req.params.id, req.user.id);
-  if (!playlist) return res.status(404).json({ message: 'Playlist non trouvée.' });
-  await playlist.deleteOne();
-  return res.json({ message: 'Playlist supprimée.' });
-};
+    async listMine(req, res) {
+      const { rows } = await db.query(
+        `SELECT p.*, u.name AS owner_name,
+                (SELECT COUNT(*)::int FROM playlist_songs ps WHERE ps.playlist_id = p.id) AS track_count
+         FROM playlists p
+         LEFT JOIN users u ON u.id = p.user_id
+         WHERE p.user_id = $1 AND p.is_editorial = false
+         ORDER BY p.updated_at DESC`,
+        [req.user.id]
+      );
+      return res.json(rows.map(mapPlaylist));
+    },
 
-export const addPlaylistTrack = async (req, res) => {
-  const { musicId } = req.body;
-  if (!mongoose.isValidObjectId(musicId)) return res.status(400).json({ message: 'musicId invalide.' });
-  const playlist = await ownedPlaylist(req.params.id, req.user.id);
-  if (!playlist) return res.status(404).json({ message: 'Playlist non trouvée.' });
-  if (!await Music.exists({ _id: musicId })) return res.status(404).json({ message: 'Musique non trouvée.' });
-  if (playlist.tracks.some((track) => track.musicId.equals(musicId))) {
-    return res.status(409).json({ message: 'Cette musique est déjà dans la playlist.' });
-  }
-  playlist.tracks.push({ musicId });
-  await playlist.save();
-  return res.status(201).json(await populatedPlaylist(Playlist.findById(playlist._id)));
-};
+    async getOne(req, res) {
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ message: 'Identifiant de playlist invalide.' });
 
-export const removePlaylistTrack = async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.musicId)) return res.status(400).json({ message: 'musicId invalide.' });
-  const playlist = await ownedPlaylist(req.params.id, req.user.id);
-  if (!playlist) return res.status(404).json({ message: 'Playlist non trouvée.' });
-  const initialLength = playlist.tracks.length;
-  playlist.tracks = playlist.tracks.filter((track) => !track.musicId.equals(req.params.musicId));
-  if (playlist.tracks.length === initialLength) return res.status(404).json({ message: 'Musique absente de la playlist.' });
-  await playlist.save();
-  return res.json(await populatedPlaylist(Playlist.findById(playlist._id)));
-};
+      const { rows } = await db.query(
+        `SELECT p.*, u.name AS owner_name
+         FROM playlists p LEFT JOIN users u ON u.id = p.user_id
+         WHERE p.id = $1`,
+        [id]
+      );
+      const playlist = rows[0];
+      if (!playlist) return res.status(404).json({ message: 'Playlist introuvable.' });
 
-export const getPublicPlaylist = async (req, res) => {
-  try {
-    const playlist = await populatedPlaylist(Playlist.findOne({ _id: req.params.id, isPublic: true })).lean();
-    if (!playlist) return res.status(404).json({ message: 'Playlist publique non trouvée.' });
-    return res.json(playlist);
-  } catch (error) {
-    return res.status(400).json({ message: 'Identifiant de playlist invalide.' });
-  }
-};
+      const isOwner = playlist.user_id === req.user.id;
+      const isAdmin = req.user.role === 'admin';
+      const isVisiblePublic = playlist.is_public && playlist.status === 'published';
 
-export const getAdminPlaylists = async (_req, res) => {
-  const items = await populatedPlaylist(Playlist.find({}).sort({ updatedAt: -1 })).lean();
-  return res.json(items.map((item) => ({
-    ...item,
-    id: item._id.toString(),
-    trackIds: item.tracks.map((track) => track.musicId?._id?.toString() || track.musicId?.toString()).filter(Boolean),
-  })));
-};
-
-export const createAdminPlaylist = async (req, res) => {
-  if (typeof req.body.name !== 'string' || !req.body.name.trim()) {
-    return res.status(400).json({ message: 'Le nom de la playlist est obligatoire.' });
-  }
-  try {
-    const trackIds = req.body.trackIds === undefined ? [] : JSON.parse(req.body.trackIds);
-    if (!Array.isArray(trackIds) || trackIds.some((id) => !mongoose.isValidObjectId(id))) {
-      return res.status(400).json({ message: 'La sélection des musiques est invalide.' });
-    }
-    if (trackIds.length && await Music.countDocuments({ _id: { $in: trackIds } }) !== new Set(trackIds.map(String)).size) {
-      return res.status(400).json({ message: 'Une musique sélectionnée est introuvable.' });
-    }
-    const playlist = await Playlist.create({
-      userId: req.user.id,
-      name: req.body.name.trim(),
-      description: req.body.description || '',
-      image: resolveUploadUrl(req.file, 'images') || req.body.image || '',
-      isPublic: req.body.isPublic === true || req.body.isPublic === 'true',
-      tracks: [...new Set(trackIds.map(String))].map((musicId) => ({ musicId })),
-    });
-    return res.status(201).json(await populatedPlaylist(Playlist.findById(playlist._id)));
-  } catch (error) {
-    return res.status(400).json({ message: error.message || 'Impossible de créer la playlist.' });
-  }
-};
-
-export const updateAdminPlaylist = async (req, res) => {
-  try {
-    const playlist = await Playlist.findById(req.params.id);
-    if (!playlist) return res.status(404).json({ message: 'Playlist non trouvée.' });
-    if (typeof req.body.name === 'string' && req.body.name.trim()) playlist.name = req.body.name.trim();
-    if (req.body.description !== undefined) playlist.description = req.body.description;
-    if (req.body.isPublic !== undefined) playlist.isPublic = req.body.isPublic === true || req.body.isPublic === 'true';
-    if (req.body.image !== undefined) playlist.image = req.body.image;
-    if (req.file) playlist.image = resolveUploadUrl(req.file, 'images');
-    if (req.body.trackIds !== undefined) {
-      const trackIds = JSON.parse(req.body.trackIds);
-      if (!Array.isArray(trackIds) || trackIds.some((id) => !mongoose.isValidObjectId(id))) {
-        return res.status(400).json({ message: 'La sélection des musiques est invalide.' });
+      if (!isOwner && !isAdmin && !isVisiblePublic) {
+        return res.status(403).json({ message: 'Vous n’avez pas accès à cette playlist.' });
       }
-      const uniqueIds = [...new Set(trackIds.map(String))];
-      if (uniqueIds.length && await Music.countDocuments({ _id: { $in: uniqueIds } }) !== uniqueIds.length) {
-        return res.status(400).json({ message: 'Une musique sélectionnée est introuvable.' });
-      }
-      playlist.tracks = uniqueIds.map((musicId) => ({ musicId }));
-    }
-    await playlist.save();
-    return res.json(await populatedPlaylist(Playlist.findById(playlist._id)));
-  } catch (error) {
-    if (error.name === 'CastError') return res.status(400).json({ message: 'Identifiant de playlist invalide.' });
-    return res.status(400).json({ message: error.message || 'Impossible de modifier la playlist.' });
-  }
-};
 
-export const deleteAdminPlaylist = async (req, res) => {
-  try {
-    const deleted = await Playlist.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'Playlist non trouvée.' });
-    return res.json({ message: 'Playlist supprimée.' });
-  } catch (error) {
-    if (error.name === 'CastError') return res.status(400).json({ message: 'Identifiant de playlist invalide.' });
-    return res.status(500).json({ message: 'Impossible de supprimer la playlist.' });
-  }
-};
+      const tracks = await fetchPlaylistTracks(playlist.id, isAdmin);
+      return res.json({
+        ...mapPlaylist({ ...playlist, track_count: tracks.length }),
+        tracks,
+        trackIds: tracks.map((t) => String(t.id)),
+      });
+    },
+
+    async createMine(req, res) {
+      const title = String(req.body?.title || req.body?.name || '').trim();
+      if (!title) return res.status(400).json({ message: 'Le titre de la playlist est obligatoire.' });
+
+      const isPublic = parseBoolean(req.body?.is_public !== undefined ? req.body.is_public : req.body?.isPublic, false);
+      const slug = slugify(title, Date.now().toString(36).slice(-4));
+
+      const { rows } = await db.query(
+        `INSERT INTO playlists (user_id, title, slug, description, is_editorial, is_public, status)
+         VALUES ($1, $2, $3, $4, false, $5, 'published') RETURNING *`,
+        [req.user.id, title, slug, String(req.body?.description || ''), isPublic]
+      );
+      return res.status(201).json(mapPlaylist({ ...rows[0], track_count: 0 }));
+    },
+
+    async updateMine(req, res) {
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ message: 'Identifiant de playlist invalide.' });
+
+      const existing = await db.query('SELECT * FROM playlists WHERE id = $1', [id]);
+      if (!existing.rows[0]) return res.status(404).json({ message: 'Playlist introuvable.' });
+      if (existing.rows[0].user_id !== req.user.id || existing.rows[0].is_editorial) {
+        return res.status(403).json({ message: 'Seul le propriétaire peut modifier cette playlist.' });
+      }
+
+      const title = req.body?.title !== undefined ? req.body.title : req.body?.name;
+      const updates = [];
+      const values = [];
+
+      if (title !== undefined) {
+        const cleanTitle = String(title).trim();
+        if (!cleanTitle) return res.status(400).json({ message: 'Le titre ne peut pas être vide.' });
+        updates.push(`title = $${values.length + 1}`);
+        values.push(cleanTitle);
+      }
+      if (req.body?.description !== undefined) {
+        updates.push(`description = $${values.length + 1}`);
+        values.push(String(req.body.description));
+      }
+      const nextPublic = req.body?.is_public !== undefined ? req.body.is_public : req.body?.isPublic;
+      if (nextPublic !== undefined) {
+        updates.push(`is_public = $${values.length + 1}`);
+        values.push(parseBoolean(nextPublic, false));
+      }
+
+      if (!updates.length && !Array.isArray(req.body?.trackIds)) {
+        return res.status(400).json({ message: 'Aucune modification fournie.' });
+      }
+
+      await db.withTransaction(async (client) => {
+        if (updates.length) {
+          values.push(id);
+          await client.query(`UPDATE playlists SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length}`, values);
+        }
+        if (Array.isArray(req.body?.trackIds)) {
+          const orderedIds = req.body.trackIds.map(parseId).filter(Boolean);
+          await client.query('DELETE FROM playlist_songs WHERE playlist_id = $1', [id]);
+          for (let i = 0; i < orderedIds.length; i += 1) {
+            await client.query(
+              'INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+              [id, orderedIds[i], i + 1]
+            );
+          }
+        }
+      });
+
+      const refreshed = await db.query('SELECT * FROM playlists WHERE id = $1', [id]);
+      const tracks = await fetchPlaylistTracks(id, false);
+      return res.json({ ...mapPlaylist({ ...refreshed.rows[0], track_count: tracks.length }), tracks });
+    },
+
+    async deleteMine(req, res) {
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ message: 'Identifiant de playlist invalide.' });
+
+      const existing = await db.query('SELECT user_id, is_editorial FROM playlists WHERE id = $1', [id]);
+      if (!existing.rows[0]) return res.status(404).json({ message: 'Playlist introuvable.' });
+      if (existing.rows[0].user_id !== req.user.id || existing.rows[0].is_editorial) {
+        return res.status(403).json({ message: 'Seul le propriétaire peut supprimer cette playlist.' });
+      }
+
+      await db.query('DELETE FROM playlists WHERE id = $1', [id]);
+      return res.json({ success: true, message: 'Playlist supprimée.' });
+    },
+
+    async addTrack(req, res) {
+      const id = parseId(req.params.id);
+      const songId = parseId(req.body?.song_id || req.body?.songId || req.body?.musicId);
+      if (!id || !songId) return res.status(400).json({ message: 'Identifiant de playlist ou de musique invalide.' });
+
+      const existing = await db.query('SELECT user_id, is_editorial FROM playlists WHERE id = $1', [id]);
+      if (!existing.rows[0]) return res.status(404).json({ message: 'Playlist introuvable.' });
+      if (existing.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Accès refusé à cette playlist.' });
+      }
+
+      const songCheck = await db.query(`SELECT id, status FROM songs WHERE id = $1`, [songId]);
+      if (!songCheck.rows[0] || (songCheck.rows[0].status !== 'published' && req.user.role !== 'admin')) {
+        return res.status(404).json({ message: 'Morceau introuvable ou non publié.' });
+      }
+
+      const posRes = await db.query('SELECT COALESCE(MAX(position), 0)::int + 1 AS next_pos FROM playlist_songs WHERE playlist_id = $1', [id]);
+      const inserted = await db.query(
+        `INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES ($1, $2, $3)
+         ON CONFLICT (playlist_id, song_id) DO NOTHING RETURNING *`,
+        [id, songId, posRes.rows[0].next_pos]
+      );
+      if (!inserted.rows[0]) {
+        return res.status(409).json({ message: 'Ce morceau figure déjà dans la playlist.' });
+      }
+
+      await db.query('UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+      const tracks = await fetchPlaylistTracks(id, req.user.role === 'admin');
+      return res.status(201).json({ success: true, tracks });
+    },
+
+    async removeTrack(req, res) {
+      const id = parseId(req.params.id);
+      const songId = parseId(req.params.songId || req.params.musicId);
+      if (!id || !songId) return res.status(400).json({ message: 'Identifiant invalide.' });
+
+      const existing = await db.query('SELECT user_id FROM playlists WHERE id = $1', [id]);
+      if (!existing.rows[0]) return res.status(404).json({ message: 'Playlist introuvable.' });
+      if (existing.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Accès refusé à cette playlist.' });
+      }
+
+      await db.query('DELETE FROM playlist_songs WHERE playlist_id = $1 AND song_id = $2', [id, songId]);
+      await db.query('UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+      const tracks = await fetchPlaylistTracks(id, req.user.role === 'admin');
+      return res.json({ success: true, tracks });
+    },
+
+    async adminList(req, res) {
+      const { rows } = await db.query(
+        `SELECT p.*, u.name AS owner_name,
+                (SELECT COUNT(*)::int FROM playlist_songs ps WHERE ps.playlist_id = p.id) AS track_count
+         FROM playlists p LEFT JOIN users u ON u.id = p.user_id
+         ORDER BY p.is_editorial DESC, p.updated_at DESC`
+      );
+      const withTrackIds = await Promise.all(rows.map(async (pl) => {
+        const tRes = await db.query('SELECT song_id FROM playlist_songs WHERE playlist_id = $1 ORDER BY position ASC', [pl.id]);
+        return {
+          ...mapPlaylist(pl),
+          trackIds: tRes.rows.map((r) => String(r.song_id)),
+        };
+      }));
+      return res.json(withTrackIds);
+    },
+
+    async adminCreate(req, res) {
+      const title = String(req.body?.title || req.body?.name || '').trim();
+      if (!title) return res.status(400).json({ message: 'Le titre de la playlist est obligatoire.' });
+
+      const cleanStatus = normalizeStatus(req.body?.status, 'published');
+      const isPublic = parseBoolean(req.body?.is_public !== undefined ? req.body.is_public : req.body?.isPublic, true);
+      const coverUrl = resolvePublicImageUrl(req.file) || req.body?.cover_url || req.body?.image || '';
+      const trackIds = (parseJsonField(req.body?.trackIds, []) || []).map(parseId).filter(Boolean);
+
+      if (cleanStatus === 'published' && trackIds.length > 0) {
+        const check = await db.query(`SELECT id, status FROM songs WHERE id = ANY($1::int[])`, [trackIds]);
+        if (check.rows.some((s) => s.status !== 'published')) {
+          return res.status(400).json({ message: 'Une playlist publiée ne peut contenir que des morceaux publiés.' });
+        }
+      }
+
+      const created = await db.withTransaction(async (client) => {
+        const { rows } = await client.query(
+          `INSERT INTO playlists (user_id, title, slug, description, cover_url, is_editorial, is_public, status)
+           VALUES ($1, $2, $3, $4, $5, true, $6, $7) RETURNING *`,
+          [req.user.id, title, slugify(title, Date.now().toString(36).slice(-4)), String(req.body?.description || ''), coverUrl, isPublic, cleanStatus]
+        );
+        const playlist = rows[0];
+        for (let i = 0; i < trackIds.length; i += 1) {
+          await client.query(
+            'INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+            [playlist.id, trackIds[i], i + 1]
+          );
+        }
+        return playlist;
+      });
+
+      await logAuditEvent(db, {
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: 'PLAYLIST_CREATED',
+        entityType: 'playlist',
+        entityId: created.id,
+        details: { title, status: cleanStatus },
+        ipAddress: req.ip,
+      });
+
+      const tracks = await fetchPlaylistTracks(created.id, true);
+      return res.status(201).json({ ...mapPlaylist({ ...created, track_count: tracks.length }), tracks, trackIds: trackIds.map(String) });
+    },
+
+    async adminUpdate(req, res) {
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ message: 'Identifiant playlist invalide.' });
+
+      const updates = [];
+      const values = [];
+      const title = req.body?.title !== undefined ? req.body.title : req.body?.name;
+      if (title !== undefined) {
+        const cleanTitle = String(title).trim();
+        if (!cleanTitle) return res.status(400).json({ message: 'Le titre ne peut pas être vide.' });
+        updates.push(`title = $${values.length + 1}`);
+        values.push(cleanTitle);
+      }
+      if (req.body?.description !== undefined) {
+        updates.push(`description = $${values.length + 1}`);
+        values.push(String(req.body.description));
+      }
+      const nextCover = resolvePublicImageUrl(req.file) || (req.body?.cover_url !== undefined ? req.body.cover_url : req.body?.image);
+      if (nextCover !== undefined) {
+        updates.push(`cover_url = $${values.length + 1}`);
+        values.push(nextCover || '');
+      }
+      const nextPublic = req.body?.is_public !== undefined ? req.body.is_public : req.body?.isPublic;
+      if (nextPublic !== undefined) {
+        updates.push(`is_public = $${values.length + 1}`);
+        values.push(parseBoolean(nextPublic, true));
+      }
+      if (req.body?.status !== undefined) {
+        if (!VALID_STATUSES.includes(String(req.body.status))) {
+          return res.status(400).json({ message: 'Statut invalide.' });
+        }
+        updates.push(`status = $${values.length + 1}`);
+        values.push(String(req.body.status));
+      }
+
+      const trackIds = req.body?.trackIds !== undefined ? (parseJsonField(req.body.trackIds, []) || []).map(parseId).filter(Boolean) : null;
+
+      const updated = await db.withTransaction(async (client) => {
+        let row;
+        if (updates.length) {
+          values.push(id);
+          const { rows } = await client.query(`UPDATE playlists SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length} RETURNING *`, values);
+          row = rows[0];
+        } else {
+          const { rows } = await client.query('SELECT * FROM playlists WHERE id = $1', [id]);
+          row = rows[0];
+        }
+        if (!row) return null;
+
+        if (trackIds !== null) {
+          await client.query('DELETE FROM playlist_songs WHERE playlist_id = $1', [id]);
+          for (let i = 0; i < trackIds.length; i += 1) {
+            await client.query(
+              'INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+              [id, trackIds[i], i + 1]
+            );
+          }
+        }
+        return row;
+      });
+
+      if (!updated) return res.status(404).json({ message: 'Playlist introuvable.' });
+
+      await logAuditEvent(db, {
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: 'PLAYLIST_UPDATED',
+        entityType: 'playlist',
+        entityId: id,
+        ipAddress: req.ip,
+      });
+
+      const tracks = await fetchPlaylistTracks(id, true);
+      return res.json({ ...mapPlaylist({ ...updated, track_count: tracks.length }), tracks, trackIds: tracks.map((t) => String(t.id)) });
+    },
+
+    async adminDelete(req, res) {
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ message: 'Identifiant playlist invalide.' });
+      const { rows } = await db.query('DELETE FROM playlists WHERE id = $1 RETURNING id, title', [id]);
+      if (!rows[0]) return res.status(404).json({ message: 'Playlist introuvable.' });
+
+      await logAuditEvent(db, {
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: 'PLAYLIST_DELETED',
+        entityType: 'playlist',
+        entityId: id,
+        details: { title: rows[0].title },
+        ipAddress: req.ip,
+      });
+      return res.json({ success: true, message: 'Playlist supprimée.' });
+    },
+  };
+}
