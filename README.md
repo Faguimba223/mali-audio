@@ -1,93 +1,151 @@
-# Mali Audio
+# Mali Audio — PWA & Backend
 
-Ce dépôt contient l’application mobile Expo, le backend API et le dashboard d’administration.
+> Plateforme musicale numérique malienne — Site web PWA, interface d'administration et API backend.
 
-## 1. Pré-requis
+[![Node.js](https://img.shields.io/badge/Node.js-24-green)](https://nodejs.org)
+[![React](https://img.shields.io/badge/React-19-blue)](https://react.dev)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-blue)](https://www.postgresql.org)
+[![Vite](https://img.shields.io/badge/Vite-8-purple)](https://vitejs.dev)
 
-- Node.js 18+
-- PostgreSQL 16+
-- npm
-- Expo SDK 57 (déjà utilisé dans l’application mobile)
+---
 
-## 2. Installation du backend
+## 🎵 Présentation
 
-```powershell
-cd "C:\Users\T480s\OneDrive\Desktop\Mali Audio\backend"
-Copy-Item .env.example .env
+**Mali Audio** est une plateforme de découverte et de diffusion de musique malienne et africaine.  
+Elle regroupe artistes, chansons, albums, playlists, vidéos et actualités dans une expérience unifiée.
+
+| Composant | Description | URL locale |
+|-----------|-------------|-----------|
+| **PWA publique** (`web/`) | Site React + Vite, installable comme app | `http://localhost:5173` |
+| **Admin** (`admin/`) | Tableau de bord administrateur séparé | `http://localhost:5174` |
+| **Backend** (`backend/`) | API REST Node.js + Express + PostgreSQL | `http://localhost:5000` |
+| **Mobile** (`Mali Audio/`) | App Expo / React Native | Expo Go |
+
+---
+
+## ⚡ Démarrage rapide
+
+### Prérequis
+- Node.js ≥ 20
+- PostgreSQL 18 (service démarré)
+- npm ≥ 10
+
+### 1. Backend
+
+```bash
+cd backend
+cp .env.example .env
+# Remplir DATABASE_URL, JWT_SECRET, STREAM_SECRET dans .env
 npm install
-npm run db:init
-npm run dev
+npm run db:migrate   # Crée les tables + compte admin
+npm run dev          # → http://localhost:5000
 ```
 
-Dans le fichier .env, configurez :
+### 2. Site web (PWA)
 
-```env
-PORT=5000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/maliaudio
-JWT_SECRET=replace_with_a_random_secret_of_at_least_32_characters
-CORS_ORIGIN=http://localhost:8081,http://localhost:19006
-UPLOAD_DIR=./uploads
-ADMIN_EMAIL=admin@maliaudio.local
-ADMIN_PASSWORD=root
-ADMIN_NAME=Administrateur
-```
-
-## 3. Lancement du backend
-
-```powershell
-cd "C:\Users\T480s\OneDrive\Desktop\Mali Audio\backend"
-npm run dev
-```
-
-La santé de l’API est accessible sur :
-
-```text
-http://localhost:5000/api/health
-```
-
-## 4. Lancement de l’application mobile
-
-```powershell
-cd "C:\Users\T480s\OneDrive\Desktop\Mali Audio\Mali Audio"
+```bash
+cd web
 npm install
-npx expo start -c
+npm run dev          # → http://localhost:5173
 ```
 
-Définissez aussi :
+### 3. Administration
 
-```env
-EXPO_PUBLIC_API_URL=http://192.168.1.20:5000/api
-```
-
-## 5. Lancement du dashboard admin
-
-```powershell
-cd "C:\Users\T480s\OneDrive\Desktop\Mali Audio\admin"
+```bash
+cd admin
 npm install
-npm run dev
+npm run dev          # → http://localhost:5174
 ```
 
-## 6. Créer le compte administrateur
+### 4. Application mobile
 
-Le compte est initialisé automatiquement au démarrage si la table users est vide. Par défaut, l’email administrative est configurable via `ADMIN_EMAIL` et le mot de passe via `ADMIN_PASSWORD`.
-
-## 7. Test rapide API
-
-```powershell
-Invoke-WebRequest http://localhost:5000/api/health
+```bash
+cd "Mali Audio"
+npm install
+npx expo start
 ```
 
-## 8. Connexion téléphone/API
+---
 
-- Exécuter le backend sur 0.0.0.0
-- Mettre l’IP locale dans `EXPO_PUBLIC_API_URL`
-- Vérifier que l’API écoute sur le port 5000
+## 🔐 Sécurité audio
 
-## 9. Déploiement
+Les fichiers audio sont stockés dans `backend/storage/private/audio/` — **jamais exposés via HTTP**.  
+L'écoute passe par un jeton HMAC temporaire :
 
-- API: hébergement Node.js compatible
-- Base PostgreSQL: hébergement PostgreSQL
-- Admin: hébergement Vite/React
-- Android: `npx eas build -p android`
+```
+POST /api/songs/:id/stream-token  →  { token }
+GET  /api/stream/:token           →  206 Partial Content (Range)
+```
 
-> Le démarrage automatique de build EAS n’a pas été lancé ici, conformément à la demande de ne pas lancer une action payante sans confirmation.
+Le Service Worker (`web/public/sw.js`) exclut explicitement `/api/stream/*` du cache.
+
+---
+
+## 👤 Compte administrateur par défaut
+
+| Champ | Valeur |
+|-------|--------|
+| Email | `admin@maliaudio.local` |
+| Mot de passe | `root` |
+
+> ⚠️ Changer ce mot de passe dès la première connexion en production.
+
+---
+
+## 🧪 Tests
+
+```bash
+cd backend
+npm test   # 5 tests doivent passer ✅
+```
+
+---
+
+## 📁 Structure du projet
+
+```
+Mali Audio/           # Application mobile Expo/React Native
+admin/                # Interface d'administration (React + Vite, port 5174)
+backend/              # API REST (Node.js + Express + PostgreSQL)
+  ├── config/         # Configuration (env, db, upload)
+  ├── controllers/    # Logique métier
+  ├── db/migrations/  # Scripts SQL versionnés
+  ├── docs/           # Spécification OpenAPI
+  ├── middleware/     # Auth JWT, gestion erreurs
+  ├── routes/         # Router principal
+  ├── test/           # Tests Node.js natifs
+  └── utils/          # Validation, audit, streaming
+docs/                 # Guides d'installation et d'administration
+web/                  # Site public PWA (React + Vite, port 5173)
+  ├── public/         # Manifest, Service Worker, icônes
+  └── src/            # Composants, pages, contextes, services
+```
+
+---
+
+## 📚 Documentation
+
+- [Guide d'installation et de déploiement](docs/GUIDE_INSTALLATION_DEPLOIEMENT.md)
+- [Guide d'administration](docs/GUIDE_ADMINISTRATION.md)
+- API OpenAPI : `http://localhost:5000/api/docs`
+
+---
+
+## 🏗️ Technologies
+
+| Couche | Technologie |
+|--------|-------------|
+| Frontend web | React 19, Vite 8, CSS custom (black/gold) |
+| Frontend admin | React 19, Vite 8 |
+| Backend | Node.js 24, Express 4, PostgreSQL 18 |
+| Auth | JWT (jsonwebtoken), bcryptjs |
+| Upload | Multer + validation magic bytes |
+| Streaming | HMAC tokens, HTTP Range 206 |
+| PWA | Web App Manifest, Service Worker |
+| Mobile | Expo 57, React Native |
+
+---
+
+## 📄 Licence
+
+Projet privé — Faguimba Traoré / Mali Audio © 2026. Tous droits réservés.

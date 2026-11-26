@@ -1,133 +1,146 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react';
+import logoImg from './assets/mali-audio-logo.png';
+import AdminLogin from './components/AdminLogin';
+import { AlbumsAdminPage, ArtistsAdminPage, PlaylistsAdminPage, SongsAdminPage } from './pages/CatalogAdminPages';
+import { NewsAdminPage, TaxonomyAdminPage, UsersAdminPage, VideosAdminPage } from './pages/EditorialAdminPages';
+import { AuditLogsPage, DashboardPage, MediaAssetsPage, SettingsPage } from './pages/OverviewAndAuditPages';
+import { adminApi } from './services/adminApi';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const TOKEN_KEY = 'maliaudio.admin.jwt';
 
-function App() {
-  const [stats, setStats] = useState({
-    users: 0,
-    artists: 0,
-    songs: 0,
-    news: 0,
-    releases: 0,
-    languages: 0,
-    totalListens: 0,
-  })
-  const [loading, setLoading] = useState(true)
+const SECTIONS = [
+  { key: 'dashboard', label: 'Tableau de bord' },
+  { key: 'songs', label: 'Chansons' },
+  { key: 'artists', label: 'Artistes' },
+  { key: 'albums', label: 'Albums & Singles' },
+  { key: 'playlists', label: 'Playlists éditoriales' },
+  { key: 'videos', label: 'Vidéos' },
+  { key: 'news', label: 'Actualités' },
+  { key: 'users', label: 'Utilisateurs' },
+  { key: 'taxonomy', label: 'Genres & Langues' },
+  { key: 'media', label: 'Médias privés' },
+  { key: 'settings', label: 'Paramètres' },
+  { key: 'audit', label: 'Journal d’activité' },
+];
+
+export default function App() {
+  const [token, setToken] = useState(() => window.localStorage.getItem(TOKEN_KEY) || '');
+  const [user, setUser] = useState(null);
+  const [checking, setChecking] = useState(Boolean(token));
+  const [active, setActive] = useState('dashboard');
 
   useEffect(() => {
-    const loadStats = async () => {
-      try {
-        const [usersResponse, artistsResponse, songsResponse, newsResponse, releasesResponse, languagesResponse] = await Promise.all([
-          fetch(`${API_BASE_URL}/users`),
-          fetch(`${API_BASE_URL}/artists`),
-          fetch(`${API_BASE_URL}/songs`),
-          fetch(`${API_BASE_URL}/news`),
-          fetch(`${API_BASE_URL}/new-releases`),
-          fetch(`${API_BASE_URL}/languages`),
-        ])
-
-        const [users, artists, songs, news, releases, languages] = await Promise.all([
-          usersResponse.json(),
-          artistsResponse.json(),
-          songsResponse.json(),
-          newsResponse.json(),
-          releasesResponse.json(),
-          languagesResponse.json(),
-        ])
-
-        const totalListens = songs.reduce((total, song) => total + Number(song.play_count || 0), 0)
-
-        setStats({
-          users: Array.isArray(users) ? users.length : 0,
-          artists: Array.isArray(artists) ? artists.length : 0,
-          songs: Array.isArray(songs) ? songs.length : 0,
-          news: Array.isArray(news) ? news.length : 0,
-          releases: Array.isArray(releases) ? releases.length : 0,
-          languages: Array.isArray(languages) ? languages.length : 0,
-          totalListens,
-        })
-      } catch (error) {
-        console.error('Erreur de chargement du dashboard admin', error)
-      } finally {
-        setLoading(false)
-      }
+    if (!token) {
+      setChecking(false);
+      return;
     }
+    let mounted = true;
+    adminApi.me(token)
+      .then((profile) => {
+        if (!mounted) return;
+        if (profile.role !== 'admin') {
+          window.localStorage.removeItem(TOKEN_KEY);
+          setToken('');
+          setUser(null);
+        } else {
+          setUser(profile);
+        }
+      })
+      .catch(() => {
+        if (!mounted) return;
+        window.localStorage.removeItem(TOKEN_KEY);
+        setToken('');
+        setUser(null);
+      })
+      .finally(() => {
+        if (mounted) setChecking(false);
+      });
+    return () => { mounted = false; };
+  }, [token]);
 
-    loadStats()
-  }, [])
+  const handleLogin = (newToken, newUser) => {
+    window.localStorage.setItem(TOKEN_KEY, newToken);
+    setToken(newToken);
+    setUser(newUser);
+  };
 
-  const cards = useMemo(
-    () => [
-      { label: 'Utilisateurs', value: stats.users },
-      { label: 'Artistes', value: stats.artists },
-      { label: 'Musiques', value: stats.songs },
-      { label: 'Actualités', value: stats.news },
-      { label: 'Nouveautés', value: stats.releases },
-      { label: 'Langues', value: stats.languages },
-      { label: 'Écoutes', value: stats.totalListens },
-    ],
-    [stats],
-  )
+  const handleLogout = async () => {
+    try {
+      if (token) await adminApi.logout(token);
+    } catch {
+      // ignore network error
+    } finally {
+      window.localStorage.removeItem(TOKEN_KEY);
+      setToken('');
+      setUser(null);
+    }
+  };
+
+  if (checking) {
+    return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>Vérification de la session…</div>;
+  }
+
+  if (!token || !user) {
+    return <AdminLogin onSuccess={handleLogin} />;
+  }
 
   return (
-    <div className="admin-app">
-      <aside className="sidebar">
-        <div className="brand">Mali Audio</div>
-        <nav>
-          <a href="#">Dashboard</a>
-          <a href="#">Utilisateurs</a>
-          <a href="#">Artistes</a>
-          <a href="#">Musiques</a>
-          <a href="#">Actualités</a>
-          <a href="#">Nouveautés</a>
-          <a href="#">Langues</a>
-          <a href="#">Catégories</a>
-          <a href="#">Paramètres</a>
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        <div className="admin-brand">
+          <img src={logoImg} alt="Mali Audio" />
+          <div>
+            <strong style={{ color: 'var(--gold-bright)', letterSpacing: '0.08em' }}>MALI AUDIO</strong>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Administration</div>
+          </div>
+        </div>
+
+        <nav className="admin-nav" aria-label="Menu d’administration">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={active === s.key ? 'active' : ''}
+              onClick={() => setActive(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
         </nav>
+
+        <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>{user.email}</div>
+          <button type="button" className="btn btn-sec btn-sm" style={{ width: '100%' }} onClick={handleLogout}>
+            Déconnexion
+          </button>
+        </div>
       </aside>
 
-      <main className="main-panel">
-        <header className="topbar">
+      <main className="admin-main">
+        <header className="admin-header">
           <div>
-            <p className="eyebrow">Administration</p>
-            <h1>Dashboard Mali Audio</h1>
+            <div style={{ fontSize: '0.75rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+              Espace Administrateur
+            </div>
+            <h1 style={{ margin: '4px 0 0', fontSize: '1.65rem' }}>
+              {SECTIONS.find((s) => s.key === active)?.label}
+            </h1>
           </div>
-          <button type="button">Ajouter</button>
         </header>
 
-        <section className="cards">
-          {cards.map((card) => (
-            <div key={card.label} className="stat-card">
-              <span>{card.label}</span>
-              <strong>{loading ? '…' : card.value}</strong>
-            </div>
-          ))}
-        </section>
-
-        <section className="panel-grid">
-          <div className="panel">
-            <h2>Vue d’ensemble</h2>
-            <ul className="list">
-              <li>Gestion des utilisateurs et activation</li>
-              <li>Gestion des artistes, musiques et actualités</li>
-              <li>Recherche sur les contenus et les langues</li>
-              <li>Favoris, historique et statistiques</li>
-            </ul>
-          </div>
-
-          <div className="panel">
-            <h2>Actions rapides</h2>
-            <div className="actions">
-              <button type="button">Ajouter une musique</button>
-              <button type="button">Ajouter un artiste</button>
-              <button type="button">Ajouter une actualité</button>
-              <button type="button">Ajouter une langue</button>
-            </div>
-          </div>
-        </section>
+        {active === 'dashboard' && <DashboardPage token={token} onNavigate={setActive} />}
+        {active === 'songs' && <SongsAdminPage token={token} />}
+        {active === 'artists' && <ArtistsAdminPage token={token} />}
+        {active === 'albums' && <AlbumsAdminPage token={token} />}
+        {active === 'playlists' && <PlaylistsAdminPage token={token} />}
+        {active === 'videos' && <VideosAdminPage token={token} />}
+        {active === 'news' && <NewsAdminPage token={token} />}
+        {active === 'users' && <UsersAdminPage token={token} currentUserId={user.id} />}
+        {active === 'taxonomy' && <TaxonomyAdminPage token={token} />}
+        {active === 'media' && <MediaAssetsPage token={token} />}
+        {active === 'settings' && <SettingsPage token={token} />}
+        {active === 'audit' && <AuditLogsPage token={token} />}
       </main>
     </div>
-  )
+  );
 }
-
-export default App

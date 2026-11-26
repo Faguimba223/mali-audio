@@ -1,17 +1,47 @@
+# Dépendances
+node_modules/
 **/node_modules/
+
+# Builds
+dist/
+**/dist/
+build/
+**/build/
+
+# Variables d'environnement (NE JAMAIS COMMITTER)
+.env
 **/.env
-**/.env.*
 !**/.env.example
+
+# Stockage privé audio (NE JAMAIS COMMITTER)
+backend/storage/
+backend/uploads/music/
+
+# Logs
 *.log
 npm-debug.log*
-.DS_Store
+yarn-debug.log*
 
-admin/dist/
-web/dist/
-Mali Audio/dist/
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Expo
+.expo/
 Mali Audio/.expo/
 
-backend/uploads/music/*
-backend/uploads/images/*
-backend/storage/private/*
-!**/.gitkeep
+# Cache
+.cache/
+**/.cache/
+*.tsbuildinfo
+
+# Couverture de tests
+coverage/
+**/coverage/
