@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Mali Audio",
+    "slug": "mali-audio",
+    "version": "1.0.0",
+    "icon": "./assets/app-icon.png",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.faguimba.maliaudio"
+    },
+
+    "android": {
+      "package": "com.faguimba.maliaudio",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#000000"
+      }
+    },
+
+    "plugins": [
+      "expo-status-bar",
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true,
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-secure-store",
+      "expo-asset"
+    ]
+  }
+}
