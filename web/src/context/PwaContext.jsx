@@ -39,7 +39,7 @@ export function PwaProvider({ children }) {
     window.addEventListener('appinstalled', onAppInstalled);
 
     if ('serviceWorker' in navigator && import.meta.env.PROD) {
-      navigator.serviceWorker.register('/sw.js').then((registration) => {
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((registration) => {
         if (registration.waiting) {
           setUpdateWaiting(registration.waiting);
         }

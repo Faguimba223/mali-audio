@@ -1,14 +1,15 @@
 const CACHE_VERSION = 'mali-audio-shell-v1.2.0';
 const PUBLIC_CACHE = 'mali-audio-public-v1.2.0';
+const APP_BASE = new URL('./', self.location).pathname;
 
 const SHELL_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/favicon.png',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/apple-touch-icon.png',
+  APP_BASE,
+  `${APP_BASE}index.html`,
+  `${APP_BASE}manifest.webmanifest`,
+  `${APP_BASE}favicon.png`,
+  `${APP_BASE}icons/icon-192.png`,
+  `${APP_BASE}icons/icon-512.png`,
+  `${APP_BASE}icons/apple-touch-icon.png`,
 ];
 
 const EXCLUDED_API_PREFIXES = [
@@ -92,11 +93,11 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response.ok) {
             const copy = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put('/index.html', copy));
+            caches.open(CACHE_VERSION).then((cache) => cache.put(`${APP_BASE}index.html`, copy));
           }
           return response;
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() => caches.match(`${APP_BASE}index.html`))
     );
     return;
   }
