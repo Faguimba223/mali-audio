@@ -4,14 +4,15 @@ import { usePlayer } from '../context/PlayerContext';
 import { Link, useRouter } from '../context/RouterContext';
 import { HeartIcon, PauseIcon, PlayIcon } from './Icons';
 
-export default function SongRow({ song, index, queueContext = [], onAddToPlaylist }) {
+export default function SongRow({ song, index, queueContext = [], onAddToPlaylist, onRemoveLocal }) {
   const { navigate } = useRouter();
   const { isAuthenticated, favoriteIds, toggleFavorite } = useAuth();
   const { currentTrack, playing, playSong, addToQueue } = usePlayer();
 
   const isCurrent = currentTrack?.id === song.id;
   const isPlayingThis = isCurrent && playing;
-  const isFav = favoriteIds.includes(Number(song.id));
+  const isLocalSong = song.isLocal === true;
+  const isFav = !isLocalSong && favoriteIds.includes(Number(song.id));
   const cover = resolveMediaUrl(song.cover_url);
 
   const handleFavorite = async () => {
@@ -41,9 +42,15 @@ export default function SongRow({ song, index, queueContext = [], onAddToPlaylis
       )}
 
       <div style={{ minWidth: 0 }}>
-        <Link to={`/chansons/${song.id}`} className="card-title" style={{ display: 'block', color: isCurrent ? 'var(--gold-bright)' : undefined }}>
-          {song.title}
-        </Link>
+        {isLocalSong ? (
+          <span className="card-title" style={{ display: 'block', color: isCurrent ? 'var(--gold-bright)' : undefined }}>
+            {song.title}
+          </span>
+        ) : (
+          <Link to={`/chansons/${song.id}`} className="card-title" style={{ display: 'block', color: isCurrent ? 'var(--gold-bright)' : undefined }}>
+            {song.title}
+          </Link>
+        )}
         <div className="card-sub">
           {song.artist_id ? <Link to={`/artistes/${song.artist_id}`}>{song.artist}</Link> : song.artist}
         </div>
@@ -58,16 +65,18 @@ export default function SongRow({ song, index, queueContext = [], onAddToPlaylis
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon"
-          style={{ color: isFav ? 'var(--crimson)' : undefined }}
-          onClick={handleFavorite}
-          aria-label={isFav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-          title={isFav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-        >
-          <HeartIcon filled={isFav} />
-        </button>
+        {!isLocalSong && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon"
+            style={{ color: isFav ? 'var(--crimson)' : undefined }}
+            onClick={handleFavorite}
+            aria-label={isFav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+            title={isFav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          >
+            <HeartIcon filled={isFav} />
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-ghost"
@@ -77,7 +86,7 @@ export default function SongRow({ song, index, queueContext = [], onAddToPlaylis
         >
           + File
         </button>
-        {onAddToPlaylist && (
+        {!isLocalSong && onAddToPlaylist && (
           <button
             type="button"
             className="btn btn-ghost"
@@ -86,6 +95,17 @@ export default function SongRow({ song, index, queueContext = [], onAddToPlaylis
             title="Ajouter à une playlist"
           >
             + Playlist
+          </button>
+        )}
+        {isLocalSong && onRemoveLocal && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ fontSize: '0.78rem', padding: '6px 8px' }}
+            onClick={() => onRemoveLocal(song)}
+            aria-label={`Retirer ${song.title} de la musique hors connexion`}
+          >
+            Retirer
           </button>
         )}
       </div>

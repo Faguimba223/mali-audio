@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { api, resolveMediaUrl } from '../services/api';
+import { deleteOfflineMusic, importOfflineMusic, listOfflineMusic } from '../services/offlineMusic';
 import { useAuth } from './AuthContext';
 
 const PlayerContext = createContext(null);
@@ -7,7 +8,11 @@ const PlayerContext = createContext(null);
 export function PlayerProvider({ children }) {
   const { token } = useAuth();
   const audioRef = useRef(null);
+  const localObjectUrlRef = useRef(null);
   const [queue, setQueue] = useState([]);
+  const [offlineTracks, setOfflineTracks] = useState([]);
+  const [offlineTracksLoading, setOfflineTracksLoading] = useState(true);
+  const [offlineTracksError, setOfflineTracksError] = useState('');
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [playing, setPlaying] = useState(false);
   const [loadingTrack, setLoadingTrack] = useState(false);
@@ -21,6 +26,64 @@ export function PlayerProvider({ children }) {
 
   const currentTrack = currentIndex >= 0 && currentIndex < queue.length ? queue[currentIndex] : null;
 
+  const releaseLocalObjectUrl = useCallback(() => {
+    if (!localObjectUrlRef.current) return;
+    audioRef.current?.pause();
+    audioRef.current?.removeAttribute('src');
+    audioRef.current?.load();
+    URL.revokeObjectURL(localObjectUrlRef.current);
+    localObjectUrlRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    listOfflineMusic()
+      .then((tracks) => {
+        if (active) setOfflineTracks(tracks);
+      })
+      .catch((err) => {
+        if (active) {
+          console.error('[PlayerContext] Failed to load offline music.', err);
+          setOfflineTracksError(err.message || 'Impossible de charger la bibliothèque hors connexion.');
+        }
+      })
+      .finally(() => {
+        if (active) setOfflineTracksLoading(false);
+      });
+
+    return () => {
+      active = false;
+      releaseLocalObjectUrl();
+    };
+  }, [releaseLocalObjectUrl]);
+
+  const importOfflineFiles = useCallback(async (files) => {
+    const result = await importOfflineMusic(files);
+    if (result.importedTracks.length) {
+      setOfflineTracks((current) => [...result.importedTracks, ...current]);
+      setOfflineTracksError('');
+    }
+    return result;
+  }, []);
+
+  const removeOfflineTrack = useCallback(async (trackId) => {
+    await deleteOfflineMusic(trackId);
+    const removedIndex = queue.findIndex((track) => track.id === trackId);
+
+    if (currentTrack?.id === trackId) {
+      releaseLocalObjectUrl();
+      setPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      setCurrentIndex(-1);
+    } else if (removedIndex >= 0 && removedIndex < currentIndex) {
+      setCurrentIndex((index) => Math.max(0, index - 1));
+    }
+
+    if (removedIndex >= 0) setQueue((current) => current.filter((track) => track.id !== trackId));
+    setOfflineTracks((current) => current.filter((track) => track.id !== trackId));
+  }, [currentIndex, currentTrack, queue, releaseLocalObjectUrl]);
+
   const startStreamForTrack = useCallback(async (track) => {
     const audio = audioRef.current;
     if (!audio || !track) return;
@@ -31,17 +94,30 @@ export function PlayerProvider({ children }) {
     setDuration(0);
 
     try {
-      const streamInfo = await api.getStreamToken(track.id, token);
-      const src = resolveMediaUrl(streamInfo.streamUrl);
-      if (!src) throw new Error('Aucun flux audio disponible pour ce titre.');
+      let src;
+      if (track.isLocal) {
+        if (!(track.file instanceof Blob)) {
+          throw new Error('Ce fichier local n’est plus disponible. Importez-le à nouveau pour l’écouter.');
+        }
+        releaseLocalObjectUrl();
+        src = URL.createObjectURL(track.file);
+        localObjectUrlRef.current = src;
+      } else {
+        releaseLocalObjectUrl();
+        const streamInfo = await api.getStreamToken(track.id, token);
+        src = resolveMediaUrl(streamInfo.streamUrl);
+        if (!src) throw new Error('Aucun flux audio disponible pour ce titre.');
+      }
 
       audio.src = src;
       audio.volume = volume;
       await audio.play();
       setPlaying(true);
-      api.recordPlay(track.id).catch(() => {});
-      if (token) {
-        api.recordHistory(track.id, 0, token).catch(() => {});
+      if (!track.isLocal) {
+        api.recordPlay(track.id).catch(() => {});
+        if (token) {
+          api.recordHistory(track.id, 0, token).catch(() => {});
+        }
       }
     } catch (err) {
       setPlaying(false);
@@ -49,7 +125,7 @@ export function PlayerProvider({ children }) {
     } finally {
       setLoadingTrack(false);
     }
-  }, [token, volume]);
+  }, [releaseLocalObjectUrl, token, volume]);
 
   const playSong = useCallback((track, nextQueue = null) => {
     if (!track) return;
@@ -187,6 +263,11 @@ export function PlayerProvider({ children }) {
   return (
     <PlayerContext.Provider value={{
       queue,
+      offlineTracks,
+      offlineTracksLoading,
+      offlineTracksError,
+      importOfflineFiles,
+      removeOfflineTrack,
       currentTrack,
       currentIndex,
       playing,

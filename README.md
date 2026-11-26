@@ -87,6 +87,10 @@ GET  /api/stream/:token           →  206 Partial Content (Range)
 
 Le Service Worker (`web/public/sw.js`) exclut explicitement `/api/stream/*` du cache.
 
+### Musique personnelle hors connexion (PWA)
+
+Dans **Catalogue Musique**, choisissez **Ajouter des fichiers** et sélectionnez les fichiers audio via le sélecteur de votre appareil. La PWA conserve uniquement les fichiers choisis dans le stockage IndexedDB de ce navigateur; ils ne sont pas envoyés au backend et peuvent être lus hors connexion sur le même appareil et dans le même navigateur. Retirer un titre de la liste n’efface pas le fichier original. Effacer les données du site dans le navigateur supprimera aussi les copies hors connexion.
+
 ---
 
 ## 👤 Compte administrateur par défaut

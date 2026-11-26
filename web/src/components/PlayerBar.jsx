@@ -93,9 +93,13 @@ export default function PlayerBar() {
                 <div className="track-cover" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)' }}>♪</div>
               )}
               <div style={{ minWidth: 0 }}>
-                <Link to={`/chansons/${currentTrack.id}`} className="card-title" style={{ display: 'block' }}>
-                  {currentTrack.title}
-                </Link>
+                {currentTrack.isLocal ? (
+                  <strong className="card-title" style={{ display: 'block' }}>{currentTrack.title}</strong>
+                ) : (
+                  <Link to={`/chansons/${currentTrack.id}`} className="card-title" style={{ display: 'block' }}>
+                    {currentTrack.title}
+                  </Link>
+                )}
                 <div className="card-sub">{currentTrack.artist}</div>
               </div>
             </div>

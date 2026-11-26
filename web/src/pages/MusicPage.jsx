@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HeartIcon, PlayIcon } from '../components/Icons';
 import SongRow from '../components/SongRow';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,7 @@ export function MusicPage() {
   const refreshVersion = useCatalogRefresh();
   const { query, navigate } = useRouter();
   const { isAuthenticated, token } = useAuth();
+  const { offlineTracks, offlineTracksLoading, offlineTracksError, importOfflineFiles, removeOfflineTrack } = usePlayer();
   const [songs, setSongs] = useState([]);
   const [languages, setLanguages] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -27,6 +28,9 @@ export function MusicPage() {
   const [playlistModalSong, setPlaylistModalSong] = useState(null);
   const [myPlaylists, setMyPlaylists] = useState([]);
   const [playlistMsg, setPlaylistMsg] = useState('');
+  const [offlineMessage, setOfflineMessage] = useState('');
+  const [offlineMessageIsError, setOfflineMessageIsError] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     Promise.all([api.getLanguages(), api.getCategories(), api.getArtists()])
@@ -79,10 +83,48 @@ export function MusicPage() {
     }
   };
 
+  const handleOfflineFiles = async (event) => {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = '';
+    if (!files.length) return;
+
+    setOfflineMessage('');
+    try {
+      const result = await importOfflineFiles(files);
+      const importedCount = result.importedTracks.length;
+      const failedFiles = result.failures.map(({ name, error: importError }) => {
+        console.error(`[MusicPage] Failed to import "${name}".`, importError);
+        return name;
+      });
+      setOfflineMessageIsError(failedFiles.length > 0);
+      setOfflineMessage([
+        importedCount ? `${importedCount} titre${importedCount > 1 ? 's' : ''} ajouté${importedCount > 1 ? 's' : ''} à votre musique hors connexion.` : '',
+        failedFiles.length ? `${failedFiles.length} fichier${failedFiles.length > 1 ? 's' : ''} refusé${failedFiles.length > 1 ? 's' : ''} : ${failedFiles.join(', ')}.` : '',
+      ].filter(Boolean).join(' '));
+    } catch (err) {
+      console.error('[MusicPage] Could not store selected music.', err);
+      setOfflineMessageIsError(true);
+      setOfflineMessage(err.message || 'Impossible d’enregistrer ces fichiers hors connexion.');
+    }
+  };
+
+  const handleRemoveOfflineTrack = async (track) => {
+    if (!window.confirm(`Retirer « ${track.title} » de la musique hors connexion ? Le fichier original ne sera pas supprimé.`)) return;
+    try {
+      await removeOfflineTrack(track.id);
+      setOfflineMessage(`${track.title} a été retiré de la bibliothèque hors connexion.`);
+      setOfflineMessageIsError(false);
+    } catch (err) {
+      console.error('[MusicPage] Could not remove offline music.', err);
+      setOfflineMessageIsError(true);
+      setOfflineMessage(err.message || 'Impossible de retirer ce titre.');
+    }
+  };
+
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Catalogue Musique</h1>
-      <p style={{ color: 'var(--text-muted)' }}>Écoute en streaming intégré uniquement dans Mali Audio.</p>
+      <p style={{ color: 'var(--text-muted)' }}>Écoutez le catalogue en streaming ou vos propres fichiers hors connexion.</p>
 
       <div className="filters-bar">
         <input
@@ -118,6 +160,62 @@ export function MusicPage() {
           <option value="title">Ordre alphabétique</option>
         </select>
       </div>
+
+      <section className="section">
+        <div className="section-header">
+          <div>
+            <h2>Ma musique hors connexion</h2>
+            <p style={{ color: 'var(--text-muted)', margin: '5px 0 0', fontSize: '0.86rem' }}>
+              Sélectionnez sur votre appareil les fichiers audio que vous souhaitez conserver dans Mali Audio.
+            </p>
+          </div>
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              multiple
+              onChange={handleOfflineFiles}
+              aria-label="Sélectionner des fichiers audio"
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={offlineTracksLoading}
+            >
+              Ajouter des fichiers
+            </button>
+          </div>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: -8 }}>
+          Seuls les fichiers sélectionnés sont enregistrés dans ce navigateur. Ils restent disponibles sans connexion sur cet appareil.
+        </p>
+        {offlineTracksError && <div className="error-box">{offlineTracksError}</div>}
+        {offlineMessage && (
+          <div className={offlineMessageIsError ? 'error-box' : 'success-box'} role="status">
+            {offlineMessage}
+          </div>
+        )}
+        {offlineTracksLoading ? (
+          <div className="state-box">Chargement de votre musique locale…</div>
+        ) : offlineTracks.length ? (
+          <div className="track-table">
+            {offlineTracks.map((song, idx) => (
+              <SongRow
+                key={song.id}
+                song={song}
+                index={idx}
+                queueContext={offlineTracks}
+                onRemoveLocal={handleRemoveOfflineTrack}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="state-box">Aucun fichier audio ajouté pour le moment.</div>
+        )}
+      </section>
 
       {error && <div className="error-box">{error}</div>}
       {loading ? (
