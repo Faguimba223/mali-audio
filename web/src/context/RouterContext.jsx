@@ -3,8 +3,13 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 const RouterContext = createContext(null);
 
 function readLocation() {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const currentPath = window.location.pathname || '/';
+  const pathname = base && currentPath.startsWith(base)
+    ? currentPath.slice(base.length) || '/'
+    : currentPath;
   return {
-    pathname: window.location.pathname || '/',
+    pathname,
     search: window.location.search || '',
   };
 }
@@ -20,11 +25,15 @@ export function RouterProvider({ children }) {
 
   const navigate = useCallback((to, { replace = false } = {}) => {
     if (!to) return;
-    if (to === `${window.location.pathname}${window.location.search}`) return;
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+    const target = to.startsWith('/') && base
+      ? `${base}${to === '/' ? '/' : to}`
+      : to;
+    if (target === `${window.location.pathname}${window.location.search}`) return;
     if (replace) {
-      window.history.replaceState({}, '', to);
+      window.history.replaceState({}, '', target);
     } else {
-      window.history.pushState({}, '', to);
+      window.history.pushState({}, '', target);
     }
     setLocation(readLocation());
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -47,6 +56,10 @@ export function useRouter() {
 
 export function Link({ to, children, className = '', onClick, ...rest }) {
   const { navigate } = useRouter();
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const href = to.startsWith('/') && base
+    ? `${base}${to === '/' ? '/' : to}`
+    : to;
   const handleClick = (event) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault();
@@ -54,7 +67,7 @@ export function Link({ to, children, className = '', onClick, ...rest }) {
     navigate(to);
   };
   return (
-    <a href={to} onClick={handleClick} className={className} {...rest}>
+    <a href={href} onClick={handleClick} className={className} {...rest}>
       {children}
     </a>
   );
