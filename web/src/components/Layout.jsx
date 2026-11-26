@@ -18,7 +18,7 @@ const NAV_ITEMS = [
 export default function Layout({ children }) {
   const { pathname, navigate } = useRouter();
   const { user, isAuthenticated } = useAuth();
-  const { canInstall, isIosInstallable, showIosHelp, setShowIosHelp, hasUpdate, isOnline, promptInstall, applyUpdate } = usePwa();
+  const { canInstall, isIosInstallable, showIosHelp, setShowIosHelp, showInstallHelp, setShowInstallHelp, hasUpdate, isOnline, promptInstall, applyUpdate } = usePwa();
   const [searchTerm, setSearchTerm] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -169,6 +169,21 @@ export default function Layout({ children }) {
               <li>Confirmez en appuyant sur <strong>Ajouter</strong>.</li>
             </ol>
             <button type="button" className="btn btn-primary" onClick={() => setShowIosHelp(false)}>
+              Compris
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showInstallHelp && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="install-help-title">
+          <div className="modal-card">
+            <h2 id="install-help-title" style={{ marginTop: 0 }}>Installer Mali Audio</h2>
+            <p style={{ color: 'var(--text-muted)' }}>
+              Dans Chrome ou Edge, ouvrez le menu du navigateur et choisissez <strong>Installer Mali Audio</strong> ou <strong>Installer cette application</strong>.
+              Sur Android, choisissez <strong>Ajouter à l’écran d’accueil</strong>.
+            </p>
+            <button type="button" className="btn btn-primary" onClick={() => setShowInstallHelp(false)}>
               Compris
             </button>
           </div>

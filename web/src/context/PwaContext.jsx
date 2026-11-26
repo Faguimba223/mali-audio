@@ -16,6 +16,7 @@ export function PwaProvider({ children }) {
   );
   const [isIosInstallable, setIsIosInstallable] = useState(detectIosSafari);
   const [showIosHelp, setShowIosHelp] = useState(false);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [updateWaiting, setUpdateWaiting] = useState(null);
   const [isOnline, setIsOnline] = useState(() => window.navigator.onLine);
 
@@ -76,7 +77,9 @@ export function PwaProvider({ children }) {
     }
     if (isIosInstallable) {
       setShowIosHelp(true);
+      return;
     }
+    setShowInstallHelp(true);
   };
 
   const applyUpdate = () => {
@@ -87,11 +90,13 @@ export function PwaProvider({ children }) {
 
   return (
     <PwaContext.Provider value={{
-      canInstall: Boolean(installPrompt) && !isInstalled,
+      canInstall: !isInstalled,
       isIosInstallable: isIosInstallable && !isInstalled,
       isInstalled,
       showIosHelp,
       setShowIosHelp,
+      showInstallHelp,
+      setShowInstallHelp,
       hasUpdate: Boolean(updateWaiting),
       isOnline,
       promptInstall,
