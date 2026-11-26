@@ -1,6 +1,7 @@
-const CACHE_VERSION = 'mali-audio-shell-v1.2.0';
-const PUBLIC_CACHE = 'mali-audio-public-v1.2.0';
+const CACHE_VERSION = 'mali-audio-shell-v1.2.1';
+const PUBLIC_CACHE = 'mali-audio-public-v1.2.1';
 const APP_BASE = new URL('./', self.location).pathname;
+const ADMIN_PATH = `${APP_BASE}admin`;
 
 const SHELL_ASSETS = [
   APP_BASE,
@@ -69,6 +70,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname === ADMIN_PATH || url.pathname.startsWith(`${ADMIN_PATH}/`)) return;
 
   // Règle impérative : ne jamais intercepter ni mettre en cache les flux audio,
   // les requêtes Range ou les endpoints privés/d'authentification.

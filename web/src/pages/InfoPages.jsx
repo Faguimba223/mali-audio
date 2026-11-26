@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import logoImg from '../assets/mali-audio-logo.png';
 import { Link } from '../context/RouterContext';
+import useCatalogRefresh from '../hooks/useCatalogRefresh';
 import { api } from '../services/api';
 
 export function AboutPage() {
@@ -19,11 +20,12 @@ export function AboutPage() {
 }
 
 export function ContactPage() {
+  const refreshVersion = useCatalogRefresh();
   const [branding, setBranding] = useState(null);
 
   useEffect(() => {
     api.publicSettings().then((res) => setBranding(res?.branding || null)).catch(() => {});
-  }, []);
+  }, [refreshVersion]);
 
   return (
     <div className="panel" style={{ maxWidth: 720, margin: '0 auto' }}>

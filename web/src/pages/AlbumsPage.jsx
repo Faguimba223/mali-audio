@@ -3,9 +3,11 @@ import { PlayIcon } from '../components/Icons';
 import SongRow from '../components/SongRow';
 import { usePlayer } from '../context/PlayerContext';
 import { Link } from '../context/RouterContext';
+import useCatalogRefresh from '../hooks/useCatalogRefresh';
 import { api, resolveMediaUrl } from '../services/api';
 
 export function AlbumsPage() {
+  const refreshVersion = useCatalogRefresh();
   const [albums, setAlbums] = useState([]);
   const [typeFilter, setTypeFilter] = useState('');
   const [loading, setLoading] = useState(true);
@@ -13,13 +15,16 @@ export function AlbumsPage() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     api.getAlbums({ type: typeFilter })
-      .then((res) => { if (active) setAlbums(Array.isArray(res) ? res : res?.items || []); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setAlbums(Array.isArray(res) ? res : res?.items || []);
+      })
       .catch((err) => { if (active) setError(err.message || 'Impossible de charger les albums.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [typeFilter]);
+  }, [typeFilter, refreshVersion]);
 
   return (
     <div>
@@ -65,6 +70,7 @@ export function AlbumsPage() {
 }
 
 export function AlbumDetailPage({ id }) {
+  const refreshVersion = useCatalogRefresh();
   const { playQueue } = usePlayer();
   const [album, setAlbum] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -73,13 +79,16 @@ export function AlbumDetailPage({ id }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     api.getAlbum(id)
-      .then((res) => { if (active) setAlbum(res); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setAlbum(res);
+      })
       .catch((err) => { if (active) setError(err.message || 'Album introuvable.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id]);
+  }, [id, refreshVersion]);
 
   if (loading) return <div className="state-box">Chargement…</div>;
   if (error || !album) return <div className="error-box">{error || 'Album introuvable.'}</div>;

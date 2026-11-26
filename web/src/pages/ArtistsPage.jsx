@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import SongRow from '../components/SongRow';
 import { Link } from '../context/RouterContext';
+import useCatalogRefresh from '../hooks/useCatalogRefresh';
 import { api, resolveMediaUrl } from '../services/api';
 
 export function ArtistsPage() {
+  const refreshVersion = useCatalogRefresh();
   const [artists, setArtists] = useState([]);
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(true);
@@ -11,13 +13,16 @@ export function ArtistsPage() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     api.getArtists({ q })
-      .then((res) => { if (active) setArtists(Array.isArray(res) ? res : res?.items || []); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setArtists(Array.isArray(res) ? res : res?.items || []);
+      })
       .catch((err) => { if (active) setError(err.message || 'Erreur de chargement.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [q]);
+  }, [q, refreshVersion]);
 
   return (
     <div>
@@ -61,19 +66,23 @@ export function ArtistsPage() {
 }
 
 export function ArtistDetailPage({ id }) {
+  const refreshVersion = useCatalogRefresh();
   const [artist, setArtist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     api.getArtist(id)
-      .then((res) => { if (active) setArtist(res); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setArtist(res);
+      })
       .catch((err) => { if (active) setError(err.message || 'Artiste introuvable.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id]);
+  }, [id, refreshVersion]);
 
   if (loading) return <div className="state-box">Chargement de la fiche artiste…</div>;
   if (error || !artist) return <div className="error-box">{error || 'Artiste introuvable.'}</div>;

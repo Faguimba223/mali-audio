@@ -4,9 +4,11 @@ import SongRow from '../components/SongRow';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import { Link, useRouter } from '../context/RouterContext';
+import useCatalogRefresh from '../hooks/useCatalogRefresh';
 import { api, resolveMediaUrl } from '../services/api';
 
 export function PlaylistsPage() {
+  const refreshVersion = useCatalogRefresh();
   const { isAuthenticated, token } = useAuth();
   const [publicPlaylists, setPublicPlaylists] = useState([]);
   const [myPlaylists, setMyPlaylists] = useState([]);
@@ -17,9 +19,9 @@ export function PlaylistsPage() {
   const [error, setError] = useState('');
 
   const loadPlaylists = useCallback(async () => {
-    setLoading(true);
     try {
       const pub = await api.getPublicPlaylists(false);
+      setError('');
       setPublicPlaylists(Array.isArray(pub) ? pub : []);
       if (isAuthenticated && token) {
         const mine = await api.getMyPlaylists(token);
@@ -36,7 +38,7 @@ export function PlaylistsPage() {
 
   useEffect(() => {
     loadPlaylists();
-  }, [loadPlaylists]);
+  }, [loadPlaylists, refreshVersion]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -121,6 +123,7 @@ export function PlaylistsPage() {
 }
 
 export function PlaylistDetailPage({ id }) {
+  const refreshVersion = useCatalogRefresh();
   const { navigate } = useRouter();
   const { token, user } = useAuth();
   const { playQueue } = usePlayer();
@@ -130,7 +133,6 @@ export function PlaylistDetailPage({ id }) {
   const [editingTitle, setEditingTitle] = useState('');
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError('');
     try {
       const data = token ? await api.getPlaylist(id, token) : await api.getPublicPlaylist(id);
@@ -145,7 +147,7 @@ export function PlaylistDetailPage({ id }) {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, refreshVersion]);
 
   if (loading) return <div className="state-box">Chargement…</div>;
   if (error || !playlist) return <div className="error-box">{error || 'Playlist introuvable.'}</div>;

@@ -21,6 +21,14 @@ Elle regroupe artistes, chansons, albums, playlists, vidéos et actualités dans
 | **Backend** (`backend/`) | API REST Node.js + Express + PostgreSQL | `http://localhost:5000` |
 | **Mobile** (`Mali Audio/`) | App Expo / React Native | Expo Go |
 
+### Accès public et administration à distance
+
+La PWA publique est publiée sur GitHub Pages à `https://faguimba223.github.io/mali-audio/`. L’administration est publiée à `https://faguimba223.github.io/mali-audio/admin/` et reste protégée par la connexion administrateur.
+
+Pour gérer le catalogue depuis un téléphone et partager les modifications avec les visiteurs, déployez l’API et PostgreSQL avec le blueprint `render.yaml`, puis définissez la variable GitHub Actions `VITE_API_URL` sur l’URL HTTPS de l’API terminée par `/api`. La PWA et l’administration seront reconstruites avec la même API ; les pages publiques actualisent les données du catalogue toutes les 5 secondes lorsqu’elles sont au premier plan.
+
+Le déploiement Render crée une nouvelle base et un stockage persistant pour les médias ; il peut entraîner des frais d’hébergement. Le transfert des données locales vers cette base doit être fait séparément après sauvegarde et accord explicite.
+
 ---
 
 ## ⚡ Démarrage rapide

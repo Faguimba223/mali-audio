@@ -4,9 +4,11 @@ import SongRow from '../components/SongRow';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import { Link, useRouter } from '../context/RouterContext';
+import useCatalogRefresh from '../hooks/useCatalogRefresh';
 import { api, resolveMediaUrl } from '../services/api';
 
 export function MusicPage() {
+  const refreshVersion = useCatalogRefresh();
   const { query, navigate } = useRouter();
   const { isAuthenticated, token } = useAuth();
   const [songs, setSongs] = useState([]);
@@ -34,15 +36,15 @@ export function MusicPage() {
         setArtists(Array.isArray(arts) ? arts : arts?.items || []);
       })
       .catch(() => {});
-  }, []);
+  }, [refreshVersion]);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError('');
     api.getSongs({ q, genre, language, artistId, sort })
       .then((res) => {
-        if (active) setSongs(Array.isArray(res) ? res : res?.items || []);
+        if (!active) return;
+        setError('');
+        setSongs(Array.isArray(res) ? res : res?.items || []);
       })
       .catch((err) => {
         if (active) setError(err.message || 'Impossible de charger les morceaux.');
@@ -51,7 +53,7 @@ export function MusicPage() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [q, genre, language, artistId, sort]);
+  }, [q, genre, language, artistId, sort, refreshVersion]);
 
   const openPlaylistPicker = async (song) => {
     if (!isAuthenticated) {
@@ -163,6 +165,7 @@ export function MusicPage() {
 }
 
 export function SongDetailPage({ id }) {
+  const refreshVersion = useCatalogRefresh();
   const { navigate } = useRouter();
   const { isAuthenticated, favoriteIds, toggleFavorite } = useAuth();
   const { playSong } = usePlayer();
@@ -172,13 +175,16 @@ export function SongDetailPage({ id }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     api.getSong(id)
-      .then((res) => { if (active) setSong(res); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setSong(res);
+      })
       .catch((err) => { if (active) setError(err.message || 'Morceau introuvable.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id]);
+  }, [id, refreshVersion]);
 
   if (loading) return <div className="state-box">Chargement de la fiche…</div>;
   if (error || !song) return <div className="error-box">{error || 'Morceau introuvable.'}</div>;

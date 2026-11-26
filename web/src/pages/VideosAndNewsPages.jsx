@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from '../context/RouterContext';
+import useCatalogRefresh from '../hooks/useCatalogRefresh';
 import { api, resolveMediaUrl } from '../services/api';
 
 function extractYoutubeEmbed(url) {
@@ -18,6 +19,7 @@ function extractYoutubeEmbed(url) {
 }
 
 export function VideosPage() {
+  const refreshVersion = useCatalogRefresh();
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -25,11 +27,15 @@ export function VideosPage() {
   useEffect(() => {
     let active = true;
     api.getVideos()
-      .then((res) => { if (active) setVideos(Array.isArray(res) ? res : res?.items || []); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setVideos(Array.isArray(res) ? res : res?.items || []);
+      })
       .catch((err) => { if (active) setError(err.message || 'Impossible de charger les vidéos.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [refreshVersion]);
 
   return (
     <div>
@@ -62,6 +68,7 @@ export function VideosPage() {
 }
 
 export function VideoDetailPage({ id }) {
+  const refreshVersion = useCatalogRefresh();
   const [video, setVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,14 +76,17 @@ export function VideoDetailPage({ id }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     setVideoError(false);
     api.getVideo(id)
-      .then((res) => { if (active) setVideo(res); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setVideo(res);
+      })
       .catch((err) => { if (active) setError(err.message || 'Vidéo introuvable.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id]);
+  }, [id, refreshVersion]);
 
   if (loading) return <div className="state-box">Chargement de la vidéo…</div>;
   if (error || !video) return <div className="error-box">{error || 'Vidéo introuvable.'}</div>;
@@ -132,6 +142,7 @@ export function VideoDetailPage({ id }) {
 }
 
 export function NewsPage() {
+  const refreshVersion = useCatalogRefresh();
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -139,11 +150,15 @@ export function NewsPage() {
   useEffect(() => {
     let active = true;
     api.getNews()
-      .then((res) => { if (active) setStories(Array.isArray(res) ? res : res?.items || []); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setStories(Array.isArray(res) ? res : res?.items || []);
+      })
       .catch((err) => { if (active) setError(err.message || 'Impossible de charger les actualités.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [refreshVersion]);
 
   return (
     <div>
@@ -179,6 +194,7 @@ export function NewsPage() {
 }
 
 export function NewsDetailPage({ id }) {
+  const refreshVersion = useCatalogRefresh();
   const [story, setStory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -186,13 +202,16 @@ export function NewsDetailPage({ id }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     api.getNewsItem(id)
-      .then((res) => { if (active) setStory(res); })
+      .then((res) => {
+        if (!active) return;
+        setError('');
+        setStory(res);
+      })
       .catch((err) => { if (active) setError(err.message || 'Actualité introuvable.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id]);
+  }, [id, refreshVersion]);
 
   if (loading) return <div className="state-box">Chargement…</div>;
   if (error || !story) return <div className="error-box">{error || 'Actualité introuvable.'}</div>;

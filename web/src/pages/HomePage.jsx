@@ -4,10 +4,12 @@ import { PlayIcon } from '../components/Icons';
 import SongRow from '../components/SongRow';
 import { usePlayer } from '../context/PlayerContext';
 import { Link } from '../context/RouterContext';
+import useCatalogRefresh from '../hooks/useCatalogRefresh';
 import { api, resolveMediaUrl } from '../services/api';
 
 export default function HomePage() {
   const { playSong } = usePlayer();
+  const refreshVersion = useCatalogRefresh();
   const [data, setData] = useState({ songs: [], popular: [], artists: [], albums: [], playlists: [], videos: [], news: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,6 +28,7 @@ export default function HomePage() {
       .then(([songsRes, popularRes, artistsRes, albumsRes, playlistsRes, videosRes, newsRes]) => {
         if (!active) return;
         const pick = (r) => (Array.isArray(r) ? r : r?.items || []);
+        setError('');
         setData({
           songs: pick(songsRes),
           popular: pick(popularRes),
@@ -43,7 +46,7 @@ export default function HomePage() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [refreshVersion]);
 
   return (
     <div>

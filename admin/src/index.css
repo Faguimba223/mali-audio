@@ -247,7 +247,8 @@ th {
 
 @media (max-width: 820px) {
   .admin-layout { flex-direction: column; }
-  .admin-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border); }
-  .admin-nav { flex-direction: row; flex-wrap: wrap; }
+  .admin-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border); padding: 14px; }
+  .admin-nav { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+  .admin-nav button { flex: 0 0 auto; white-space: nowrap; }
   .admin-main { padding: 18px 14px; }
 }
